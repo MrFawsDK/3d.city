@@ -53,6 +53,41 @@ export class BuildTool extends THREE.Object3D {
 
 		this.add(this.mesh)
 
+		this.makeGrid()
+
+	}
+
+	// Faint tile grid that follows the cursor (fades with distance).
+	makeGrid ( r = 12 ) {
+
+		const pos = [], col = [];
+		const fade = ( d ) => Math.max( 0, 1 - d / ( r + 0.5 ) ) * 0.45;
+		const y = 0.03;
+
+		for ( let i = -r; i <= r + 1; i++ ) {
+			const e = i - 0.5;
+			for ( let j = -r; j <= r; j++ ) {
+				// line along z at x=e
+				let a = fade( Math.hypot( e, j - 0.5 ) ), b = fade( Math.hypot( e, j + 0.5 ) );
+				pos.push( e, y, j - 0.5, e, y, j + 0.5 ); col.push( a, a, a, b, b, b );
+				// line along x at z=e
+				a = fade( Math.hypot( j - 0.5, e ) ); b = fade( Math.hypot( j + 0.5, e ) );
+				pos.push( j - 0.5, y, e, j + 0.5, y, e ); col.push( a, a, a, b, b, b );
+			}
+		}
+
+		const g = new THREE.BufferGeometry();
+		g.setAttribute( 'position', new THREE.Float32BufferAttribute( pos, 3 ) );
+		g.setAttribute( 'color', new THREE.Float32BufferAttribute( col, 3 ) );
+
+		this.grid = new THREE.LineSegments( g, new THREE.LineBasicMaterial({
+			vertexColors: true, transparent: true, depthTest: false, depthWrite: false,
+			blending: THREE.AdditiveBlending, allowOverride: false
+		}) );
+		this.grid.renderOrder = 0;
+		this.grid.frustumCulled = false;
+		this.add( this.grid );
+
 	}
 
 	makeMorph ( s, d = 0 ) {

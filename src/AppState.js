@@ -15,6 +15,12 @@ export const AppState = {
     direct: 10,
     directColor: 0xffffff,//0xbcae9a
 
+    dayNight:        false,  // day/night cycle (toggle: N)
+    dayTime:         0.25,   // 0..1, 0.25 = noon
+    dayLength:       120,    // seconds per full day
+
+    showGrid:        true,   // tile grid around build cursor (toggle: G)
+
     activeFOG:      true,
 
     forceWebGL:      true,

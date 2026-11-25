@@ -248,6 +248,7 @@ export class View {
 	    if( this.dragMode() ) this.dragCenterposition();
 	    else this.updateKey();
 	    
+	    this.updateDayNight( AppState.delta );
 	    this.applyZoomInertia();
 	    this.applyOrbitMomentum();
 	    this.updateCamera()
@@ -793,7 +794,46 @@ export class View {
 
     }
 
+    // Day/night cycle (toggle with the N key). t: 0..1 over AppState.dayLength seconds.
+    updateDayNight( dt ){
+
+    	if( !AppState.dayNight || !this.sun ) return;
+
+    	AppState.dayTime = ( AppState.dayTime + dt / AppState.dayLength ) % 1;
+
+    	const a = AppState.dayTime * Math.PI * 2;
+    	const h = Math.sin( a );                       // -1 night .. 1 noon
+    	const day = THREE.MathUtils.smoothstep( h, -0.15, 0.35 );   // 0 night, 1 day
+    	const warm = 1 - THREE.MathUtils.smoothstep( Math.abs( h ), 0.0, 0.5 ); // dusk/dawn tint
+
+    	const c = this.center;
+    	this.sun.position.set( c.x + Math.cos( a ) * 80, 30 + Math.max( h, 0.05 ) * 70, c.z + 50 );
+    	this.sun.target.position.set( c.x, c.y, c.z );
+
+    	this.sun.color.setRGB( 1, 1 - warm * 0.35, 1 - warm * 0.65 );
+    	this.sun.intensity = AppState.direct * ( 0.05 + 0.95 * day );
+
+    	const k = 0.25 + 0.75 * day;
+    	renderer.toneMappingExposure = AppState.exposure * k;
+    	if( this.scene.background ){
+    		this.scene.backgroundIntensity = AppState.backgroundIntensity * ( 0.15 + 0.85 * day );
+    	}
+
+    }
+
+    toggleDayNight(){
+    	AppState.dayNight = !AppState.dayNight;
+    	if( !AppState.dayNight && this.sun ){
+    		this.sun.color.set( AppState.directColor );
+    		this.sun.intensity = AppState.direct;
+    		renderer.toneMappingExposure = AppState.exposure;
+    		if( this.scene.background ) this.scene.backgroundIntensity = AppState.backgroundIntensity;
+    		this.updateSunPosition();
+    	}
+    }
+
     updateSunPosition(){
+    	if( AppState.dayNight ) return;
     	sun.position.set( this.center.x+10 , 100, this.center.z+50 );
 		sun.target.position.set( this.center.x, this.center.y, this.center.z );
     }
@@ -1724,14 +1764,14 @@ export class View {
 
 				if( this.currentTool ){
 
+					this.snapToGrid();
+
 					this.tool.position.set(this.raypos.x, this.raypos.y, this.raypos.z);
+					this.tool.grid.visible = AppState.showGrid;
 
-					//this.tool.position.set(this.raypos.x, this.raypos.y, this.raypos.z);
 					if(this.mouse.click || this.mouse.drag){ 
-						AppState.main.mapClick( this.currentTool.tool );
-
+						this.placeAlongDrag();
 					}
-					//if(this.mouse.click || this.currentTool.drag) mapClick();
 
 					this.mouse.click=false;
 				}
@@ -1742,6 +1782,63 @@ export class View {
 		}
 	}
 
+
+	//------------------------------------------GRID PLACEMENT
+
+	// Snap cursor to the grid while dragging:
+	// - line tools (road/rail/wire) lock to one axis from the drag start (hold Shift = free)
+	// - 3x3 zones snap to a 3-tile lattice anchored at the drag start, so they never overlap
+	snapToGrid () {
+
+		const t = this.currentTool, p = this.raypos, s = this.dragStart;
+		if( !this.mouse.down || !s ) return;
+
+		if( t.size === 1 && ( t.tool === 'road' || t.tool === 'rail' || t.tool === 'wire' ) ){
+			if( this.shiftDown ){ this.dragAxis = null; return; }
+			if( !this.dragAxis ){
+				const dx = Math.abs( p.x - s.x ), dz = Math.abs( p.z - s.z );
+				if( dx + dz === 0 ) return;
+				this.dragAxis = dx >= dz ? 'x' : 'z';
+			}
+			if( this.dragAxis === 'x' ) p.z = s.z; else p.x = s.x;
+		} else if( t.drag && t.build && t.size === 3 ){
+			p.x = s.x + 3 * Math.round( ( p.x - s.x ) / 3 );
+			p.z = s.z + 3 * Math.round( ( p.z - s.z ) / 3 );
+		}
+
+	}
+
+	// Place on click/drag, once per tile, filling gaps if the mouse moved fast.
+	placeAlongDrag () {
+
+		const p = this.raypos, t = this.currentTool;
+		if( !this.dragStart ) this.dragStart = { x: p.x, z: p.z };
+
+		const last = this.lastPlaced;
+		if( last && last.x === p.x && last.z === p.z ) return;
+
+		if( last && t.size === 1 && !t.build ){
+			// walk the grid from last tile to current tile (Bresenham)
+			let x = last.x, z = last.z;
+			const dx = Math.abs( p.x - x ), dz = Math.abs( p.z - z );
+			const sx = x < p.x ? 1 : -1, sz = z < p.z ? 1 : -1;
+			let err = dx - dz;
+			const ex = p.x, ez = p.z, ey = p.y;
+			while( x !== ex || z !== ez ){
+				const e2 = 2 * err;
+				if( e2 > -dz ){ err -= dz; x += sx; }
+				if( e2 < dx ){ err += dx; z += sz; }
+				p.x = x; p.z = z;
+				AppState.main.mapClick( t.tool );
+			}
+			p.x = ex; p.z = ez; p.y = ey;
+		} else {
+			AppState.main.mapClick( t.tool );
+		}
+
+		this.lastPlaced = { x: p.x, z: p.z };
+
+	}
 
 	//------------------------------------------TOOL
 
@@ -2211,6 +2308,7 @@ export class View {
 
 
 	    if(this.currentTool && this.mouse.button<2){// only for tool
+	    	this.dragStart = null; this.dragAxis = null; this.lastPlaced = null;
 	    	this.mouse.click = true;
 	        if(this.currentTool.drag){ this.mouse.drag = true;}
 	        this.rayTest();
@@ -2233,6 +2331,7 @@ export class View {
 		this.mouse.button = 0;
 	    this.mouse.down = false;
 	    this.mouse.drag = false;
+	    this.dragStart = null; this.dragAxis = null; this.lastPlaced = null;
 	    if(this.currentTool==null)this.mouse.move = true;
 	    this.ease.x = 0;
 	    this.ease.z = 0;
@@ -2895,6 +2994,9 @@ export class View {
 				case 'ArrowDown':  case 'KeyS':              _this.key[1] = 1; break; // down, S
 				case 'ArrowLeft':  case 'KeyA': case 'KeyQ': _this.key[2] = 1; break; // left, A, Q
 				case 'ArrowRight': case 'KeyD':              _this.key[3] = 1; break; // right, D
+				case 'KeyN': _this.toggleDayNight(); break;
+				case 'KeyG': AppState.showGrid = !AppState.showGrid; break;
+				case 'ShiftLeft': case 'ShiftRight': _this.shiftDown = true; break;
 			}
 		}, false);
 		document.addEventListener('keyup', function(e) {
@@ -2903,6 +3005,7 @@ export class View {
 				case 'ArrowDown':  case 'KeyS':              _this.key[1] = 0; break; // down, S
 				case 'ArrowLeft':  case 'KeyA': case 'KeyQ': _this.key[2] = 0; break; // left, A, Q
 				case 'ArrowRight': case 'KeyD':              _this.key[3] = 0; break; // right, D
+				case 'ShiftLeft': case 'ShiftRight': _this.shiftDown = false; break;
 			}
 		}, false);
 	    self.focus();
