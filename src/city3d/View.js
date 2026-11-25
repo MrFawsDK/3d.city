@@ -1767,7 +1767,7 @@ export class View {
 					this.snapToGrid();
 
 					this.tool.position.set(this.raypos.x, this.raypos.y, this.raypos.z);
-					this.tool.grid.visible = AppState.showGrid;
+					this.updateBuildGrid();
 
 					if(this.mouse.click || this.mouse.drag){ 
 						this.placeAlongDrag();
@@ -1784,6 +1784,21 @@ export class View {
 
 
 	//------------------------------------------GRID PLACEMENT
+
+	updateBuildGrid () {
+
+		const g = this.tool.gridGroup, p = this.raypos;
+		if( !g.parent ) this.scene.add( g );
+		g.visible = AppState.showGrid && !!this.currentTool && p.x >= 0;
+		if( !g.visible ) return;
+
+		const mx = this.mapSize[0], mz = this.mapSize[1];
+		this.tool.updateGrid( p.x, p.z, ( i, j ) => {
+			i = Math.min( Math.max( i, 0 ), mx ); j = Math.min( Math.max( j, 0 ), mz );
+			return this.heightData ? this.heightData[ this.findHeightId( i, j ) ] : 0;
+		} );
+
+	}
 
 	// Snap cursor to the grid while dragging:
 	// - line tools (road/rail/wire) lock to one axis from the drag start (hold Shift = free)
@@ -1845,6 +1860,7 @@ export class View {
 	selectTool ( id ) {
 
 		this.tool.visible = false;
+		this.tool.gridGroup.visible = false;
 		this.raypos.x = -1;
 		this.raypos.z = -1;
 
@@ -2325,6 +2341,7 @@ export class View {
 
 		if(this.currentTool && this.mouse.button===3 && this.ease.x===0 && this.ease.y === 0 ){
 	    	this.tool.position.set(-1, -1, -1);
+	    	this.tool.gridGroup.visible = false;
 	    	AppState.hub.resetTool()
 	    }
 

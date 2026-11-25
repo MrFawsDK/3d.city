@@ -57,36 +57,66 @@ export class BuildTool extends THREE.Object3D {
 
 	}
 
-	// Faint tile grid that follows the cursor (fades with distance).
-	makeGrid ( r = 12 ) {
+	// Terrain-following tile grid around the cursor, in 3 opacity rings (inner = strongest).
+	// Lives in world space (add tool.gridGroup to the scene), rebuilt only when the cursor tile changes.
+	makeGrid ( r = 10 ) {
 
-		const pos = [], col = [];
-		const fade = ( d ) => Math.max( 0, 1 - d / ( r + 0.5 ) ) * 0.45;
-		const y = 0.03;
+		this.gridR = r;
+		this.gridKey = '';
+		this.gridGroup = new THREE.Group();
+		this.gridGroup.visible = false;
+		this.gridRings = [];
 
-		for ( let i = -r; i <= r + 1; i++ ) {
-			const e = i - 0.5;
-			for ( let j = -r; j <= r; j++ ) {
-				// line along z at x=e
-				let a = fade( Math.hypot( e, j - 0.5 ) ), b = fade( Math.hypot( e, j + 0.5 ) );
-				pos.push( e, y, j - 0.5, e, y, j + 0.5 ); col.push( a, a, a, b, b, b );
-				// line along x at z=e
-				a = fade( Math.hypot( j - 0.5, e ) ); b = fade( Math.hypot( j + 0.5, e ) );
-				pos.push( j - 0.5, y, e, j + 0.5, y, e ); col.push( a, a, a, b, b, b );
+		const rings = [ [ 3, 0.75 ], [ 6, 0.45 ], [ r, 0.2 ] ];
+		for ( const [ , opacity ] of rings ) {
+
+			const g = new THREE.BufferGeometry();
+			g.setAttribute( 'position', new THREE.BufferAttribute( new Float32Array( ( 2 * r + 2 ) * ( 2 * r + 1 ) * 12 ), 3 ) );
+			g.setDrawRange( 0, 0 );
+
+			const m = new THREE.LineSegments( g, new THREE.LineBasicMaterial({
+				color: 0x0c1420, transparent: true, opacity, depthWrite: false, allowOverride: false
+			}) );
+			m.frustumCulled = false;
+			m.renderOrder = 2;
+			this.gridGroup.add( m );
+			this.gridRings.push( m );
+
+		}
+		this.gridLimits = rings.map( v => v[ 0 ] );
+
+	}
+
+	// cx, cz: cursor tile; hf(i,j): terrain height at tile corner (i-0.5, j-0.5)
+	updateGrid ( cx, cz, hf ) {
+
+		const key = cx + '_' + cz;
+		if ( key === this.gridKey ) return;
+		this.gridKey = key;
+
+		const r = this.gridR, lift = 0.05;
+		const out = this.gridRings.map( () => [] );
+		const ring = ( di, dj ) => {
+			const d = Math.max( Math.abs( di ), Math.abs( dj ) );
+			return d <= this.gridLimits[ 0 ] ? 0 : d <= this.gridLimits[ 1 ] ? 1 : 2;
+		};
+		const P = ( i, j ) => [ i - 0.5, Math.max( hf( i, j ), 0 ) + lift, j - 0.5 ];
+
+		for ( let i = cx - r; i <= cx + r + 1; i++ ) {
+			for ( let j = cz - r; j <= cz + r + 1; j++ ) {
+				// edge along z from corner (i,j) to (i,j+1)
+				if ( j <= cz + r ) out[ ring( i - cx - 0.5, j - cz ) ].push( ...P( i, j ), ...P( i, j + 1 ) );
+				// edge along x from corner (i,j) to (i+1,j)
+				if ( i <= cx + r ) out[ ring( i - cx, j - cz - 0.5 ) ].push( ...P( i, j ), ...P( i + 1, j ) );
 			}
 		}
 
-		const g = new THREE.BufferGeometry();
-		g.setAttribute( 'position', new THREE.Float32BufferAttribute( pos, 3 ) );
-		g.setAttribute( 'color', new THREE.Float32BufferAttribute( col, 3 ) );
-
-		this.grid = new THREE.LineSegments( g, new THREE.LineBasicMaterial({
-			vertexColors: true, transparent: true, depthTest: false, depthWrite: false,
-			blending: THREE.AdditiveBlending, allowOverride: false
-		}) );
-		this.grid.renderOrder = 0;
-		this.grid.frustumCulled = false;
-		this.add( this.grid );
+		this.gridRings.forEach( ( m, k ) => {
+			const attr = m.geometry.attributes.position, n = Math.min( out[ k ].length, attr.array.length );
+			attr.array.set( out[ k ].slice( 0, n ) );
+			attr.needsUpdate = true;
+			m.geometry.setDrawRange( 0, n / 3 );
+		} );
 
 	}
 
