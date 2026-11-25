@@ -47,7 +47,7 @@ export class Hub_Tutorial {
 
 			select( 'road', '2 · Roads', 'Next, a road. Press the <b>Road</b> tool.' ),
 			{ title:'2 · Roads', needs:'road', done:{ type:'place', name:'road', count:5 },
-			  text:'<b>Click and drag</b> a road next to the power plant. It snaps to a straight line (hold <b>Shift</b> for free drawing).' },
+			  text:'<b>Click, hold and drag</b> to draw a road next to the power plant. You see the whole path and its price first, <b>release</b> to build it. (Hold <b>Shift</b> to draw freehand.)' },
 
 			select( 'residential', '3 · Homes', 'People need somewhere to live. Press <b>Residential</b> (green).' ),
 			{ title:'3 · Homes', needs:'residential', done:{ type:'place', name:'residential', count:2 },

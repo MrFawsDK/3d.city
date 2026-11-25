@@ -249,6 +249,7 @@ export class View {
 	    else this.updateKey();
 	    
 	    this.updateConstruction( Math.min( AppState.delta, 0.1 ) );
+	    this.updateGhost( Math.min( AppState.delta, 0.1 ) );
 	    this.updateDayNight( AppState.delta );
 	    this.applyZoomInertia();
 	    this.applyOrbitMomentum();
@@ -1771,7 +1772,9 @@ export class View {
 					this.tool.position.set(this.raypos.x, this.raypos.y, this.raypos.z);
 					this.updateBuildGrid();
 
-					if(this.mouse.click || this.mouse.drag){ 
+					if( this.isLineTool() && !this.shiftDown ) this.lineDrag();
+					else if(this.mouse.click || this.mouse.drag){ 
+						this.lineStart = null;     // Shift pressed mid-drag: switch to live freehand
 						this.placeAlongDrag();
 					}
 
@@ -1928,26 +1931,153 @@ export class View {
 
 	}
 
-	// Snap cursor to the grid while dragging:
-	// - line tools (road/rail/wire) lock to one axis from the drag start (hold Shift = free)
-	// - 3x3 zones snap to a 3-tile lattice anchored at the drag start, so they never overlap
+	// Snap cursor to the grid while dragging: 3x3 zones snap to a 3-tile lattice anchored at the drag start, so they never overlap
 	snapToGrid () {
 
 		const t = this.currentTool, p = this.raypos, s = this.dragStart;
 		if( !this.mouse.down || !s ) return;
 
-		if( t.size === 1 && ( t.tool === 'road' || t.tool === 'rail' || t.tool === 'wire' ) ){
-			if( this.shiftDown ){ this.dragAxis = null; return; }
-			if( !this.dragAxis ){
-				const dx = Math.abs( p.x - s.x ), dz = Math.abs( p.z - s.z );
-				if( dx + dz === 0 ) return;
-				this.dragAxis = dx >= dz ? 'x' : 'z';
-			}
-			if( this.dragAxis === 'x' ) p.z = s.z; else p.x = s.x;
-		} else if( t.drag && t.build && t.size === 3 ){
+		if( t.drag && t.build && t.size === 3 ){
 			p.x = s.x + 3 * Math.round( ( p.x - s.x ) / 3 );
 			p.z = s.z + 3 * Math.round( ( p.z - s.z ) / 3 );
 		}
+
+	}
+
+	// ---- Click-hold-drag line building (road / rail / wire), Skylines style:
+	// hold = live preview of the whole path with price, release = build. Shift = freehand (live).
+
+	isLineTool () {
+
+		const t = this.currentTool;
+		return !!t && t.size === 1 && !t.build && ( t.tool === 'road' || t.tool === 'rail' || t.tool === 'wire' );
+
+	}
+
+	// straight if nearly aligned, otherwise an L-shape (long side first)
+	makeLinePath ( a, b ) {
+
+		const dx = b.x - a.x, dz = b.z - a.z, out = [];
+		const sx = Math.sign( dx ), sz = Math.sign( dz );
+		const xFirst = Math.abs( dx ) >= Math.abs( dz );
+		const straight = Math.min( Math.abs( dx ), Math.abs( dz ) ) <= 1;
+
+		if( straight ){
+			if( xFirst ) for( let i = 0; i <= Math.abs( dx ); i++ ) out.push({ x: a.x + i * sx, z: a.z });
+			else for( let i = 0; i <= Math.abs( dz ); i++ ) out.push({ x: a.x, z: a.z + i * sz });
+			return out;
+		}
+		if( xFirst ){
+			for( let i = 0; i <= Math.abs( dx ); i++ ) out.push({ x: a.x + i * sx, z: a.z });
+			for( let i = 1; i <= Math.abs( dz ); i++ ) out.push({ x: b.x, z: a.z + i * sz });
+		} else {
+			for( let i = 0; i <= Math.abs( dz ); i++ ) out.push({ x: a.x, z: a.z + i * sz });
+			for( let i = 1; i <= Math.abs( dx ); i++ ) out.push({ x: a.x + i * sx, z: b.z });
+		}
+		return out;
+
+	}
+
+	lineDrag () {
+
+		const p = this.raypos;
+
+		if( this.mouse.click ){
+			this.lineStart = { x: p.x, z: p.z };
+			this.linePath = [ { x: p.x, z: p.z } ];
+			this.lineKey = '';
+			this.ghostTime = 0;
+		}
+
+		if( !this.lineStart || !this.mouse.down ) return;
+
+		const key = p.x + '_' + p.z;
+		if( key === this.lineKey ) return;
+		this.lineKey = key;
+
+		this.linePath = this.makeLinePath( this.lineStart, p );
+		this.drawGhost( this.linePath );
+
+		const t = this.currentTool, n = this.linePath.length;
+		const name = t.tool.charAt( 0 ).toUpperCase() + t.tool.slice( 1 );
+		AppState.hub.toast( name + ': ' + n + ' tile' + ( n > 1 ? 's' : '' ) + ' · $' + ( n * t.price ) + '  (release to build)', 'info' );
+
+	}
+
+	commitLine () {
+
+		const p = this.raypos, t = this.currentTool, path = this.linePath;
+		if( !path || !path.length ) return;
+
+		const sx = p.x, sz = p.z, sy = p.y;
+		for( const q of path ){
+			p.x = q.x; p.z = q.z;
+			AppState.main.mapClick( t.tool );
+		}
+		p.x = sx; p.z = sz; p.y = sy;
+
+		this.ghostTime = 0.9;     // keep the preview until the sim has drawn the tiles
+
+	}
+
+	drawGhost ( path ) {
+
+		if( !this.ghost ){
+			const fill = new THREE.Mesh( new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
+				color: 0xffffff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, allowOverride: false, fog: false }) );
+			const edge = new THREE.LineSegments( new THREE.BufferGeometry(), new THREE.LineBasicMaterial({
+				color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, allowOverride: false, fog: false }) );
+			fill.frustumCulled = edge.frustumCulled = false;
+			fill.renderOrder = 3; edge.renderOrder = 4;
+			this.ghost = new THREE.Group();
+			this.ghost.add( fill, edge );
+			this.ghost.fill = fill; this.ghost.edge = edge;
+			this.scene.add( this.ghost );
+		}
+
+		const mx = this.mapSize[0], mz = this.mapSize[1];
+		const H = ( i, j ) => {
+			i = Math.min( Math.max( i, 0 ), mx ); j = Math.min( Math.max( j, 0 ), mz );
+			return Math.max( this.heightData ? this.heightData[ this.findHeightId( i, j ) ] : 0, 0 ) + 0.1;
+		};
+
+		const pos = [], lines = [];
+		for( const q of path ){
+			const x = q.x, z = q.z;
+			const a = [ x - 0.5, H( x, z ), z - 0.5 ], b = [ x + 0.5, H( x + 1, z ), z - 0.5 ];
+			const c = [ x + 0.5, H( x + 1, z + 1 ), z + 0.5 ], d = [ x - 0.5, H( x, z + 1 ), z + 0.5 ];
+			pos.push( ...a, ...b, ...c, ...a, ...c, ...d );
+			lines.push( ...a, ...b, ...b, ...c, ...c, ...d, ...d, ...a );
+		}
+
+		this.ghost.fill.geometry.dispose(); this.ghost.edge.geometry.dispose();
+		this.ghost.fill.geometry = new THREE.BufferGeometry();
+		this.ghost.fill.geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( pos, 3 ) );
+		this.ghost.edge.geometry = new THREE.BufferGeometry();
+		this.ghost.edge.geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( lines, 3 ) );
+
+		this.ghost.fill.material.color.set( this.currentTool.color );
+		this.ghost.fill.material.opacity = 0.6;
+		this.ghost.edge.material.opacity = 0.9;
+		this.ghost.visible = true;
+
+	}
+
+	updateGhost ( dt ) {
+
+		if( !this.ghost || !( this.ghostTime > 0 ) ) return;
+		this.ghostTime -= dt;
+		if( this.ghostTime <= 0 ){ this.ghost.visible = false; return; }
+		const k = Math.min( 1, this.ghostTime / 0.5 );
+		this.ghost.fill.material.opacity = 0.6 * k;
+		this.ghost.edge.material.opacity = 0.9 * k;
+
+	}
+
+	clearGhost () {
+
+		this.ghostTime = 0;
+		if( this.ghost ) this.ghost.visible = false;
 
 	}
 
@@ -2460,6 +2590,7 @@ export class View {
 
 	    if(this.currentTool && this.mouse.button<2){// only for tool
 	    	this.dragStart = null; this.dragAxis = null; this.lastPlaced = null;
+	    	this.lineStart = null; this.linePath = null;
 	    	this.mouse.click = true;
 	        if(this.currentTool.drag){ this.mouse.drag = true;}
 	        this.rayTest();
@@ -2479,6 +2610,13 @@ export class View {
 	    	this.tool.gridGroup.visible = false;
 	    	AppState.hub.resetTool()
 	    }
+
+		// release = build the previewed line (leaving the window / right click cancels it)
+		if( this.lineStart ){
+			if( e.type !== 'mouseout' && this.mouse.button !== 3 && this.mouse.button !== 2 ) this.commitLine();
+			else this.clearGhost();
+			this.lineStart = null; this.linePath = null;
+		}
 
 		this.mouse.button = 0;
 	    this.mouse.down = false;
