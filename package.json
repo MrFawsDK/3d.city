@@ -26,7 +26,7 @@
     "build": "npm run main && npm run city",
     "main": "rollup -c utils/rollup.config.main.js",
     "city": "rollup -c utils/rollup.config.city.js",
-    "dev": "http-server ./ -c-1 -a localhost -p 8666 -o dev.html",
+    "dev": "http-server ./ -c-1 -a localhost -p 8666 -o ./index.html",
     "start": "http-server ./ -c-1 -a localhost -p 8686 -o ./index.html"
   },
   "keywords": [
@@ -43,6 +43,7 @@
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-terser": "^1.0.0",
+    "http-server": "^14.1.1",
     "magic-string": "^0.30.0",
     "rollup": "^4.6.0"
   }
