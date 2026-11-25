@@ -41,6 +41,7 @@ export class Hub_Build {
 
         const b0 = this.addBottomButton(this.inner, 407, 'BUILD')
         const b1 = this.addBottomButton(this.inner, 550, 'SERVICE')
+        this.btnBuild = b0; this.btnService = b1;
         b0.addEventListener('click',  (e)=>{ e.preventDefault(); self.switchMenu(0); }, false);
         b1.addEventListener('click',  (e)=>{ e.preventDefault(); self.switchMenu(1); }, false);
 

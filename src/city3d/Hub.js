@@ -16,6 +16,7 @@ import { Hub_Ordinances } from './hub/Hub_Ordinances.js'
 import { Hub_Economy } from './hub/Hub_Economy.js'
 import { Hub_Save_Load } from './hub/Hub_Save_Load.js'
 import { Hub_About } from './hub/Hub_About.js'
+import { Hub_Tutorial, tutorialDone } from './hub/Hub_Tutorial.js'
 
 
 //------------------------------------------------------//
@@ -272,6 +273,23 @@ export class Hub {
     resetTool() {
 
         this.buildHub.resetTool()
+
+    }
+
+    // Guided first steps. Auto-starts on a new game until finished/skipped; key H replays it.
+    startTutorial( force = false ) {
+
+        if( !this.buildHub ) return;
+        if( !force && ( !AppState.newGame || tutorialDone() ) ) return;
+        if( !this.tutorial ) this.tutorial = new Hub_Tutorial( this );
+        clearTimeout( this._tutTimer );
+        this._tutTimer = setTimeout( () => this.tutorial.start(), force ? 0 : 1800 );   // after the intro zoom
+
+    }
+
+    tutorialNotify( type, name ) {
+
+        if( this.tutorial ) this.tutorial.notify( type, name );
 
     }
 

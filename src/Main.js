@@ -147,6 +147,7 @@ export class Main {
 
         AppState.hub.cleartMaptHub()
         AppState.hub.initGameHub();
+        AppState.hub.startTutorial();
         AppState.view3d.startZoom();
         AppState.workerBridge.post({tell:"PLAYMAP"});
 

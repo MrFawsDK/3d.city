@@ -19,6 +19,7 @@ export const AppState = {
     dayTime:         0.25,   // 0..1, 0.25 = noon
     dayLength:       120,    // seconds per full day
 
+    newGame:         false,  // true when the current game was started with New Game (tutorial)
     showGrid:        true,   // tile grid around build cursor (toggle: G)
 
     activeFOG:      true,

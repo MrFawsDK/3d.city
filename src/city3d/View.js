@@ -501,6 +501,7 @@ export class View {
 		if( this.fileInput ) document.body.removeChild(this.fileInput)
 
 		this.command = type;
+		AppState.newGame = ( type === 'NEW' );
 
 		//this.isMenu = false;
 
@@ -2011,6 +2012,7 @@ export class View {
 		}
 
         AppState.main.sendTool( Base.toolSet[id].tool );
+        if( this.currentTool ) AppState.hub.tutorialNotify( 'tool', this.currentTool.tool );
 
 	}
 
@@ -2020,6 +2022,8 @@ export class View {
 	build( x, y ) {
 		
 		if( this.currentTool.tool === 'query' ) return;
+
+		AppState.hub.tutorialNotify( 'place', this.currentTool.tool );
 
 		if( this.currentTool.build ){
 
@@ -3145,6 +3149,7 @@ export class View {
 				case 'ArrowRight': case 'KeyD':              _this.key[3] = 1; break; // right, D
 				case 'KeyN': _this.toggleDayNight(); break;
 				case 'KeyG': AppState.showGrid = !AppState.showGrid; break;
+				case 'KeyH': AppState.hub.startTutorial( true ); break;
 				case 'ShiftLeft': case 'ShiftRight': _this.shiftDown = true; break;
 			}
 		}, false);
