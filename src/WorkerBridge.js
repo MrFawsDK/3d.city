@@ -159,6 +159,8 @@ export class WorkerBridge {
             }
         }
 
+        if ( phase === 'TOOLMSG' ) AppState.hub.toast( d.text, d.kind );
+
         if ( phase === 'BUILD' ) {
             AppState.view3d.build( d.x, d.y );
         }

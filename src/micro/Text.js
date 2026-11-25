@@ -55,7 +55,27 @@ const Text = function(){
     // Tool strings
     var toolMessages = {
         noMoney: 'Insufficient funds to build that',
-        needsDoze: 'Area must be bulldozed first'
+        needsDoze: 'Area must be bulldozed first',
+        // detailed player-facing messages
+        noMoneyDetail: function ( what, cost, funds ) {
+            return 'Not enough money for ' + what + ': it costs $' + cost + ' but you only have $' + Math.max( 0, Math.floor( funds ) ) + '.';
+        },
+        needsDozeDetail: function ( what ) {
+            return 'Something is in the way of the ' + what + '. Clear the area with the bulldozer first.';
+        },
+        outOfMap: function ( what ) {
+            return 'The ' + what + ' does not fit here: it is too close to the edge of the map.';
+        },
+        blocked: function ( what ) {
+            return 'Cannot place ' + what + ' on this tile. It may be water, or blocked by another structure.';
+        },
+        names: {
+            airport: 'an airport', coal: 'a coal power plant', commercial: 'a commercial zone',
+            fire: 'a fire station', hospital: 'a hospital', industrial: 'an industrial zone',
+            nuclear: 'a nuclear power plant', park: 'a park', police: 'a police station',
+            port: 'a seaport', rail: 'rail', residential: 'a residential zone', road: 'a road',
+            school: 'a school', stadium: 'a stadium', wire: 'a power line'
+        }
     };
 
     // Message strings

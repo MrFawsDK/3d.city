@@ -248,6 +248,7 @@ export class View {
 	    if( this.dragMode() ) this.dragCenterposition();
 	    else this.updateKey();
 	    
+	    this.updateConstruction( Math.min( AppState.delta, 0.1 ) );
 	    this.updateDayNight( AppState.delta );
 	    this.applyZoomInertia();
 	    this.applyOrbitMomentum();
@@ -1783,6 +1784,132 @@ export class View {
 	}
 
 
+	//------------------------------------------CONSTRUCTION
+	// Buildings are not instant: a construction site (growing scaffold + progress bar) is shown,
+	// and the real building only appears when the build time is over. Time depends on building type.
+
+	// seconds per building geo id (see Base.toolSet)
+	static BUILD_TIME = { 1:4, 2:5, 3:5, 4:8, 5:1.5, 7:8, 8:15, 9:20, 10:18, 11:18, 12:30, 13:9, 14:9 };
+
+	startConstruction ( kind, x, py, z, v, zone, size, sy ) {
+
+		if( !this.constructions ) this.constructions = [];
+
+		const off = size === 4 ? 0.5 : size === 6 ? 1.5 : 0;     // footprint centre, same as the cursor
+		const w = Math.max( size * 0.92, 0.6 );
+		const h = Math.max( sy * 1.2, 0.5 );
+		const color = this.currentTool.color;
+
+		const group = new THREE.Group();
+		group.position.set( x + off, py, z + off );
+
+		const basic = ( o ) => new THREE.MeshBasicMaterial( Object.assign( { allowOverride:false, fog:false }, o ) );
+
+		const slab = new THREE.Mesh( new THREE.BoxGeometry( w, 0.06, w ), basic({ color: 0x3a3a3a }) );
+		slab.position.y = 0.03;
+		group.add( slab );
+
+		const boxGeo = new THREE.BoxGeometry( 1, 1, 1 );
+		const body = new THREE.Mesh( boxGeo, basic({ color, transparent:true, opacity:0.3 }) );
+		const frame = new THREE.LineSegments( new THREE.EdgesGeometry( boxGeo ), new THREE.LineBasicMaterial({ color: 0xffffff, allowOverride:false }) );
+		group.add( body, frame );
+
+		const barBg = new THREE.Mesh( boxGeo, basic({ color: 0x151515 }) );
+		barBg.scale.set( w, 0.12, 0.12 );
+		const bar = new THREE.Mesh( boxGeo, basic({ color: 0x4cd964 }) );
+		group.add( barBg, bar );
+
+		this.scene.add( group );
+
+		const job = { kind, x, py, z, v, zone, size, h, w, group, body, frame, bar, barBg, slab,
+			t: 0, dur: View.BUILD_TIME[ v ] || 5,
+			x0: x - 1, x1: x - 1 + ( size === 1 ? 0 : size - 1 ), z0: z - 1, z1: z - 1 + ( size === 1 ? 0 : size - 1 ) };
+		if( size === 1 ){ job.x0 = job.x1 = x; job.z0 = job.z1 = z; }
+		this.constructions.push( job );
+		this.poseConstruction( job, 0 );
+
+	}
+
+	poseConstruction ( j, p ) {
+
+		const hh = Math.max( j.h * p, 0.02 );
+		const w = j.w;
+		j.body.scale.set( w * 0.96, hh, w * 0.96 );
+		j.body.position.y = hh * 0.5;
+		j.frame.scale.copy( j.body.scale );
+		j.frame.position.y = j.body.position.y;
+
+		const top = j.h + 0.45;
+		j.barBg.position.y = top;
+		j.bar.scale.set( Math.max( w * p, 0.001 ), 0.14, 0.14 );
+		j.bar.position.set( -( w - w * p ) * 0.5, top, 0 );
+
+	}
+
+	updateConstruction ( dt ) {
+
+		const list = this.constructions;
+		if( !list || !list.length ) return;
+
+		let i = list.length, j;
+		while( i-- ){
+			j = list[ i ];
+			j.t += dt;
+			if( j.t >= j.dur ) this.finishConstruction( j );
+			else this.poseConstruction( j, j.t / j.dur );
+		}
+
+	}
+
+	finishConstruction ( j ) {
+
+		const k = this.constructions.indexOf( j );
+		if( k !== -1 ) this.constructions.splice( k, 1 );
+		this.disposeSite( j );
+
+		if( j.kind === 'building' ) this.addBaseBuilding( j.x, j.py, j.z, j.v, j.zone );
+		else this.addBaseTown( j.x, j.py, j.z, j.v, j.zone );
+
+	}
+
+	disposeSite ( j ) {
+
+		this.scene.remove( j.group );
+		j.group.traverse( o => { if( o.material ) o.material.dispose(); } );
+		j.body.geometry.dispose(); j.frame.geometry.dispose(); j.slab.geometry.dispose();
+
+	}
+
+	// bulldozing a site cancels the construction (no refund, same as the sim)
+	cancelConstruction ( x, z ) {
+
+		const list = this.constructions;
+		if( !list ) return;
+		let i = list.length, j;
+		while( i-- ){
+			j = list[ i ];
+			if( x >= j.x0 && x <= j.x1 && z >= j.z0 && z <= j.z1 ){
+				list.splice( i, 1 );
+				this.disposeSite( j );
+			}
+		}
+
+	}
+
+	clearConstruction () {
+
+		if( !this.constructions ) return;
+		while( this.constructions.length ) this.disposeSite( this.constructions.pop() );
+
+	}
+
+	finishAllConstruction () {
+
+		if( !this.constructions ) return;
+		while( this.constructions.length ) this.finishConstruction( this.constructions[ 0 ] );
+
+	}
+
 	//------------------------------------------GRID PLACEMENT
 
 	updateBuildGrid () {
@@ -1925,14 +2052,14 @@ export class View {
 				this.snd_layzone.play();
 				///this._spawnConstructionMarker(x, py, y, size);
 				this.markers.spawn( this.tool )
-				this.addBaseBuilding(x, py, y, v, zone);
+				this.startConstruction( 'building', x, py, y, v, zone, size, sizey );
 			}
 			// town building
 			if(v==8 || v==9 || v==4 || v==5 || v==7 || v==10 || v==11 || v==12){	
 				this.snd_layzone.play();
 				//this._spawnConstructionMarker(x, py, y, size)
 				this.markers.spawn( this.tool )
-				this.addBaseTown(x,py,y,v,zone);
+				this.startConstruction( 'town', x, py, y, v, zone, size, sizey );
 			}
 
 		} else {
@@ -1954,6 +2081,7 @@ export class View {
 
 
 			if( this.currentTool.tool === 'bulldozer' ){
+				this.cancelConstruction( x, y );
 				this.forceUpdate.x = x;
 		        this.forceUpdate.y = y;
 		        this.testDestruct(x,y);
@@ -2128,6 +2256,8 @@ export class View {
     //---------------------------------------------------BUILDING LISTING
 
     saveCityBuild(saveCity) {
+
+    	this.finishAllConstruction();
     	
     	let l = this.nlayers;
     	while(l--){
@@ -2145,6 +2275,7 @@ export class View {
     }
 
     loadCityBuild(saveCity) {
+    	this.clearConstruction();
     	saveCity = JSON.parse(saveCity);
     	let l = this.nlayers;
     	let ldata;
@@ -2447,6 +2578,7 @@ export class View {
 	// -----------------------
 
 	paintMap ( mapSize, island = false ) {
+		this.clearConstruction();
 
 		if(AppState.debugTime) console.time("PaintMap");
 

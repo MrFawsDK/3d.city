@@ -398,6 +398,7 @@ export class MainGame {
         if(this.currentTool!==null) this.currentTool.clear();
         if(name !== "none") this.currentTool = this.gameTools[name];
         else this.currentTool = null;
+        this.currentToolName = name;
         
     }
 
@@ -417,12 +418,19 @@ export class MainGame {
             var evaluation = this.simulation.evaluation;
             var messageMgr = new MessageManager();
             this.currentTool.doTool(x, y, this.simulation.blockMaps, messageMgr );
+            var cost = this.currentTool._applicationCost || this.currentTool.toolCost || 0;
             this.currentTool.modifyIfEnoughFunding(budget, messageMgr);
             var tell = "";
+            var T = TXT.toolMessages, name = this.currentToolName, what = T.names[name] || name;
 
             switch (this.currentTool.result) {
-                case this.currentTool.TOOLRESULT_NEEDS_BULLDOZE: tell = TXT.toolMessages.needsDoze; break;
-                case this.currentTool.TOOLRESULT_NO_MONEY: tell = TXT.toolMessages.noMoney; break; 
+                case this.currentTool.TOOLRESULT_NEEDS_BULLDOZE: this.toolMessage( T.needsDozeDetail(what), 'warn' ); break;
+                case this.currentTool.TOOLRESULT_NO_MONEY: this.toolMessage( T.noMoneyDetail(what, cost, budget.totalFunds), 'error' ); break; 
+                case this.currentTool.TOOLRESULT_FAILED:
+                    if( name === 'bulldozer' || name === 'query' ) break;
+                    if( this.currentTool.size ) this.toolMessage( T.outOfMap(what), 'warn' );
+                    else this.toolMessage( T.blocked(what), 'warn' );
+                break;
                 default: 
                     tell = '&nbsp;';
                     //if( id >= 11  && id != 15 ) this.needMapUpdate = true;
@@ -432,6 +440,15 @@ export class MainGame {
             
             this.processMessages(messageMgr.getMessages());
         }
+    }
+
+    // Player-facing tool feedback; identical messages are throttled (drag would spam them)
+    toolMessage ( text, kind ){
+        var now = Date.now();
+        if( this._lastToolMsg === text && now - this._lastToolMsgTime < 2500 ) return;
+        this._lastToolMsg = text;
+        this._lastToolMsgTime = now;
+        CityGame.post({ tell:"TOOLMSG", text:text, kind:kind });
     }
 
     setDisaster (disaster){

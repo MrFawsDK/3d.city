@@ -105,6 +105,28 @@ export class Hub {
     }
 
 
+    // Short-lived message under the top bar. kind: 'error' | 'warn' | 'info'
+    toast( text, kind = 'info' ) {
+
+        if( !this.toastEl ){
+            const t = document.createElement('div');
+            t.style.cssText = 'position:fixed; left:50%; top:90px; transform:translateX(-50%); max-width:min(90vw,560px);' +
+                'padding:10px 18px; border-radius:10px; font:600 14px/1.3 system-ui,sans-serif; color:#fff; text-align:center;' +
+                'pointer-events:none; z-index:50; opacity:0; transition:opacity .25s; box-shadow:0 4px 18px rgba(0,0,0,.4);';
+            document.body.appendChild( t );
+            this.toastEl = t;
+        }
+
+        const colors = { error:'#c0392b', warn:'#d68910', info:'#2471a3' };
+        const icons  = { error:'⛔ ', warn:'⚠️ ', info:'ℹ️ ' };
+        this.toastEl.style.background = colors[ kind ] || colors.info;
+        this.toastEl.textContent = ( icons[ kind ] || '' ) + text;
+        this.toastEl.style.opacity = '1';
+        clearTimeout( this.toastTimer );
+        this.toastTimer = setTimeout( () => { this.toastEl.style.opacity = '0'; }, 3500 );
+
+    }
+
     showError( e ) {
 
         console.log(e)
